@@ -14,15 +14,18 @@ class Shell:
             except FileNotFoundError:
                 print("Directory was not found")
                 return
-        else:
-            os.write(1, "bye".encode())
+        elif args[0] == self.exit:
+            os.write(1, "exiting shell, bye!".encode())
             sys.exit(0)
+            
+        else:
+            os.write(1, "unknown command".encode())
 
     def parse(self, shell_in):
         commands = []
         cmnds = shell_in.split("|")
         for cmnd in cmnds:
-            cmnd = cmnd.split(" ")
+            sect = cmnd.split(" ")
 
             out_ind = None
             in_ind = None
@@ -40,23 +43,23 @@ class Shell:
 
             if out_ind:
                 part1 = cmnd[:out_ind]
-                part2 = cmnd[out_ind:]
-                commands.append({'cmd': part1[0],
-                                 'args': part1[0:],
+                part2 = cmnd[out_ind+1:]
+                commands.append({'cmd': sect[0].strip(),
+                                 'args': part1.strip(),
                                  'input': None,
-                                 'output': part2})
+                                 'output': part2.strip()})
                 
             elif in_ind:
                 part1 = cmnd[:in_ind]
-                part2 = cmnd[in_ind:]
-                commands.append({'cmd': part1[0],
-                                 'args': part1[0:],
-                                 'input': part2,
+                part2 = cmnd[in_ind+1:]
+                commands.append({'cmd': sect[0].strip(),
+                                 'args': part1.strip(),
+                                 'input': part2.strip(),
                                  'output': None})
                 
             else:
-                commands.append({'cmd': cmnd[0],
-                                 'args': cmnd[0:],
+                commands.append({'cmd': sect[0].strip(),
+                                 'args': cmnd.strip(),
                                  'input': None,
                                  'output': None})
         return commands
@@ -87,7 +90,8 @@ class Shell:
             #for built in functions
             for_stand = shell_input.split(" ")
             if for_stand[0].lower() in self.commands:
-                self.run_base_command(for_stand[0])
+                self.run_base_command(for_stand)
+                continue
 
             #otherwise proceed with parsing
             results = self.parse(shell_input)
@@ -96,6 +100,7 @@ class Shell:
                 continue
 
             cmd_0, cmd_1 = results if len(results) != 1 else (results[0], None)
+            print(cmd_0)
 
             rc = os.fork()
 
@@ -108,11 +113,13 @@ class Shell:
 
                 if cmd_1:
                     pass #piping is not yet implemented
-                self.execute(cmd_0['args'])
+                self.execute(cmd_0)
                 
             else:                           # parent (forked ok)
                 if cmd_1:
-                    pass #piping is not yet implemented
+                    childPidCode = os.wait()
+                    #pass #piping is not yet implemented
+                
                 else:
                     childPidCode = os.wait() #commence waiting
 
@@ -123,15 +130,18 @@ class Shell:
                 
 
     def execute(self, args):
+        command = args['cmd']
+        arguments = args['args'].split()
         for dir in re.split(":", os.environ['PATH']): # try each directory in the path
-            program = "%s/%s" % (dir, args)
+            program = f"{dir}/{command}"
             try:
-                os.execve(program, args, os.environ) # try to exec program
+                os.execve(program, arguments, os.environ) # try to exec program
             except FileNotFoundError:             # ...expected
                 pass                              # ...fail quietly
 
-            os.write(2, ("Child:    Could not exec %s\n" % args[0]).encode())
-            sys.exit(0)
+
+        os.write(2, ("Child:    Could not exec %s\n" % args['cmd']).encode())
+        sys.exit(0)
 
 sh = Shell()
 sh.run()
