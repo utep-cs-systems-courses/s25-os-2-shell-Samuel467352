@@ -23,8 +23,11 @@ class Shell:
 
     def parse(self, shell_in):
         commands = []
-        cmnds = shell_in.split("|")
+        cmnds = shell_in.split('|')
+        print(cmnds)
         for cmnd in cmnds:
+            cmnd = cmnd.strip()
+            print(f"Parsing command: {cmnd}")
             sect = cmnd.split(" ")
 
             out_ind = None
@@ -86,6 +89,7 @@ class Shell:
 
             #get args from standard input
             shell_input = os.read(0, 10000).decode().strip()
+            print(shell_input)
             
             #for built in functions
             for_stand = shell_input.split(" ")
@@ -102,6 +106,15 @@ class Shell:
             cmd_0, cmd_1 = results if len(results) != 1 else (results[0], None)
             print(cmd_0)
 
+            pr, pw = None, None
+            if cmd_1:
+                pr, pw = os.pipe()
+                for f in (pr, pw):
+                    os.set_inheritable(f, True)
+                print("pipe fds: pr=%d, pw=%d" % (pr,pw))
+
+            import fileinput
+
             rc = os.fork()
 
             if rc < 0:
@@ -111,14 +124,36 @@ class Shell:
             elif rc == 0:                 # child
                 self.redirect(cmd_0)
 
+                #for piping
                 if cmd_1:
-                    pass #piping is not yet implemented
+                    os.close(pr)
+                    os.dup(pw)
+                    for fd in (pr, pw):
+                        os.close(fd)
+                    print("child created")
+
                 self.execute(cmd_0)
                 
             else:                           # parent (forked ok)
                 if cmd_1:
+                    print("Parent: My pid==%d.  Child's pid=%d" % (os.getpid(), rc), file=sys.stderr)
+                    os.close(pw)
                     childPidCode = os.wait()
-                    #pass #piping is not yet implemented
+
+                    rc2 = os.fork()
+
+                    if rc2 < 0:
+                        os.write(2, ("fork 2 failed, returning %d\n" % rc).encode())
+                        sys.exit(1)
+                    elif rc2 == 0:
+                        self.redirect(cmd_0)
+                        os.dup2(pr, 0)
+                        os.close(pr)
+
+                        self.execute(cmd_0)
+                    else:
+                        os.close(pr)
+                        childPidCode = os.wait()
                 
                 else:
                     childPidCode = os.wait() #commence waiting
@@ -133,6 +168,7 @@ class Shell:
         command = args['cmd']
         arguments = args['args'].split()
         for dir in re.split(":", os.environ['PATH']): # try each directory in the path
+            print(args)
             program = f"{dir}/{command}"
             try:
                 os.execve(program, arguments, os.environ) # try to exec program
